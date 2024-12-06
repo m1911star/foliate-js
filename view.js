@@ -229,6 +229,7 @@ export class View extends HTMLElement {
         })
     }
     async open(book) {
+        console.log(book, 'book');
         if (typeof book === 'string'
         || typeof book.arrayBuffer === 'function'
         || book.isDirectory) book = await makeBook(book)

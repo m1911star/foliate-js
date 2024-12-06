@@ -101,9 +101,8 @@ export class SectionProgress {
     getSection(fraction) {
         if (fraction <= 0) return [0, 0]
         if (fraction >= 1) return [this.sizes.length - 1, 1]
-        fraction = fraction + Number.EPSILON
         const { sizeTotal } = this
-        let index = this.sectionFractions.findIndex(x => x > fraction) - 1
+        let index = this.sectionFractions.findIndex(x => x > (fraction + Number.EPSILON)) - 1
         if (index < 0) return [0, 0]
         while (!this.sizes[index]) index++
         const fractionInSection = (fraction - this.sectionFractions[index])

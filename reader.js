@@ -2,6 +2,7 @@ import './view.js'
 import { createTOCView } from './ui/tree.js'
 import { createMenu } from './ui/menu.js'
 import { Overlayer } from './overlayer.js'
+import { ReadingProgress } from './storage.js'
 
 const getCSS = ({ spacing, justify, hyphenate }) => `
     @namespace epub "http://www.idpf.org/2007/ops";
@@ -112,7 +113,17 @@ class Reader {
 
         const { book } = this.view
         this.view.renderer.setStyles?.(getCSS(this.style))
-        this.view.renderer.next()
+        
+
+        // 恢复上次阅读进度
+        const savedProgress = ReadingProgress.getProgress(book);
+        console.log(savedProgress, book);
+        if (savedProgress?.fraction) {
+            console.log('restoring progress', savedProgress);
+            await this.view.goToFraction(savedProgress.fraction);
+        } else {
+            this.view.renderer.next()
+        }
 
         $('#header-bar').style.visibility = 'visible'
         $('#nav-bar').style.visibility = 'visible'
@@ -131,7 +142,7 @@ class Reader {
 
         document.addEventListener('keydown', this.#handleKeydown.bind(this))
 
-        const title = formatLanguageMap(book.metadata?.title) || 'Untitled Book'
+        const title = formatLanguageMap(book.metadata?.title) || file.name.split('.').slice(0, -1).join('.')
         document.title = title
         $('#side-bar-title').innerText = title
         $('#side-bar-author').innerText = formatContributor(book.metadata?.author)
@@ -181,30 +192,69 @@ class Reader {
         }
     }
     #handleKeydown(event) {
-        const k = event.key
-        if (k === 'ArrowLeft' || k === 'h') this.view.goLeft()
-        else if(k === 'ArrowRight' || k === 'l') this.view.goRight()
+        const { key, ctrlKey, metaKey, altKey, shiftKey } = event
+        if (ctrlKey && key === 's') {
+            event.preventDefault()
+            const { book } = this.view
+            const progress = {
+                section: {
+                    current: this.view.renderer.index,
+                    total: this.sections?.length
+                },
+                fraction: parseFloat($('#progress-slider').value),
+                location: this.view.renderer.location
+            }
+            if (ReadingProgress.saveProgress(book, progress)) {
+                // 显示保存成功提示
+                const toast = document.createElement('div')
+                toast.textContent = '进度已保存'
+                toast.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    background: rgba(0, 0, 0, 0.8);
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    z-index: 1000;
+                `
+                document.body.appendChild(toast)
+                setTimeout(() => toast.remove(), 2000)
+            }
+            return
+        }
+        if (key === 'ArrowLeft' || key === 'h') this.view.goLeft()
+        else if(key === 'ArrowRight' || key === 'l') this.view.goRight()
     }
     #onLoad({ detail: { doc } }) {
         doc.addEventListener('keydown', this.#handleKeydown.bind(this))
     }
-    #onRelocate({ detail }) {
-        const { fraction, location, tocItem, pageItem } = detail
-        const percent = percentFormat.format(fraction)
-        const loc = pageItem
-            ? `Page ${pageItem.label}`
-            : `Loc ${location.current}`
-        const slider = $('#progress-slider')
-        slider.style.visibility = 'visible'
-        slider.value = fraction
-        slider.title = `${percent} · ${loc}`
-        if (tocItem?.href) this.#tocView?.setCurrentHref?.(tocItem.href)
+    #onRelocate(event) {
+        const { detail } = event
+        const progress = {
+            section: {
+                current: detail.index,
+                total: this.sections?.length
+            },
+            fraction: detail.fraction,
+            location: detail.location
+        }
+        
+        // 保存阅读进度
+        ReadingProgress.saveProgress(this.view.book, progress)
+        
+        // 更新进度条
+        $('#progress-slider').value = detail.fraction
+        $('#progress-slider').title = `${percentFormat.format(detail.fraction)} · ${detail.location.current}`
+        if (detail.tocItem?.href) this.#tocView?.setCurrentHref?.(detail.tocItem.href)
     }
 }
 
 const open = async file => {
     document.body.removeChild($('#drop-target'))
     const reader = new Reader()
+    console.log(file.name, file.type, 'file');
     globalThis.reader = reader
     await reader.open(file)
 }
